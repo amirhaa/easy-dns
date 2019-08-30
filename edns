@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+
+input=$1
+dnsnames=()
+
+# exit script if config file is not available or is not readable
+if [[ ! -r config ]]
+then
+    echo "Please create a file named config"
+    exit 1
+fi
+
+# Read config file and save dns names in dnsnames array
+while read key value
+do
+    dnsnames+=($key)
+done < config
+
+# Exit the script if no names provided in config file
+if [[ ${#dnsnames[@]} -eq 0 ]]
+then
+    echo "No key value specified in config file"
+    exit 1
+fi
+
+display_help() {
+    echo "Usage: $0 ls - display all available dns names" >&2
+    echo "Usage: $0 change [dnsname] - change your dns" >&2
+    echo "Usage: $0 show - show system's current dns"
+}
+
+# print help file if no input is provided
+if [[ -z $input ]]
+then
+    display_help
+    exit 1
+fi
+
+# Display all available dns names
+# if dns name is selected it will be stored in $dns
+if [[ "$input" == "ls" ]]
+then
+    PS3="Choose dns by specifing the number: "
+    select dns in ${dnsnames[@]}
+    do
+        echo "$x"
+        break
+    done
+
+    if [[ -z $dns ]]
+    then
+        echo "Wrong choice, correct way is: $0 ch ${dnsnames[0]}"
+        exit 1
+    fi
+fi
+
+# Set dns in /etc/resolv.conf
+# make it sticky with chattr +i
+set_dns() {
+    if [[ -z $1 ]]
+    then
+        exit 1
+    fi
+    
+    nameserver=$1
+    dns_name=$2
+    
+    sudo -i -u root bash << EOF
+    chattr -i /etc/resolv.conf
+    rm -f /etc/resolv.conf
+    touch /etc/resolv.conf
+    echo "$nameserver" > /etc/resolv.conf
+    chattr +i /etc/resolv.conf
+EOF
+
+    if [[ $? -eq 0 ]]
+    then
+        echo "dns successfully changed to $dns_name"
+        exit 0
+    fi
+}
+
+
+build_dns_structure() {
+    dns=$1
+    if [[ -z $dns ]]
+    then
+        exit 1
+    fi
+
+    while read key value
+    do
+        if [[ "$dns" == "$key" ]]
+        then
+            values=($value)
+            for item in ${values[@]}
+            do
+                nameserver+="nameserver $item"
+                nameserver+=$'\n'
+            done
+            break
+        fi
+    done < config
+
+    if [[ -n nameserver ]]
+    then
+        set_dns "$nameserver" "$dns"
+    fi
+}
+
+# build dns structure
+# call set_dns to change it
+if [[ -n $dns ]]
+then
+    build_dns_structure "$dns"
+fi
+
+# Show current dns of system
+if [[ "$input" == "show" ]]
+then
+    echo "$(cat /etc/resolv.conf)"
+    exit 0 
+fi
+
+# if change called
+if [[ "$input" == "change" ]]
+then
+    dns_name=$2
+    
+    if [[ -z $dns_name ]]
+    then
+        echo "No dns name specified!!"
+        exit 1
+    fi
+
+    if [[ ! " ${dnsnames[@]} " =~ " $dns_name " ]]
+    then
+        echo "The name specified is not in the config!!"
+        exit 1
+    fi
+
+    build_dns_structure "$dns_name"
+fi
