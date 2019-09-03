@@ -1,4 +1,4 @@
-# easy-dns
+# hard-dns
 
 A simple bash script to change dns easily
 
